@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Kat Planı Üretici</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+  h1 { text-align: center; }
+  .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+  input, select, button { padding: 8px; margin: 5px; }
+  svg { border: 1px solid #ccc; margin-top: 20px; background: #fff; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Kat Planı Üretici</h1>
+  <div>
+    <input type="text" id="projectName" placeholder="Proje Adı">
+    <select id="apartmentType">
+      <option value="">Daire Tipi</option>
+      <option value="studio">Stüdyo</option>
+      <option value="1+1">1+1</option>
+      <option value="2+1">2+1</option>
+      <option value="3+1">3+1</option>
+    </select>
+    <input type="number" id="area" placeholder="Alan (m²)">
+    <select id="streetSides">
+      <option value="1">1 Cephe</option>
+      <option value="2">2 Cephe</option>
+      <option value="3">3 Cephe</option>
+      <option value="4">4 Cephe</option>
+    </select>
+    <button onclick="generateFloorPlan()">Plan Oluştur</button>
+  </div>
+  <div id="svgContainer"></div>
+</div>
+
+<script>
+function generateFloorPlan() {
+  const projectName = document.getElementById('projectName').value;
+  const type = document.getElementById('apartmentType').value;
+  const areaSize = Number(document.getElementById('area').value);
+  const sides = Number(document.getElementById('streetSides').value);
+
+  if (!projectName || !type || !areaSize) {
+    alert("Lütfen tüm alanları doldurun!");
+    return;
+  }
+
+  const width = 800;
+  const height = 600;
+  const margin = 20;
+
+  // Alan ölçeği
+  const scaleFactor = Math.sqrt(areaSize / 100);
+
+  const buildingWidth = (width - 2 * margin) * scaleFactor;
+  const buildingHeight = (height - 120) * scaleFactor;
+
+  let baseRooms = [];
+  if (type === 'studio') {
+    baseRooms = [
+      { name: 'Oda', color: '#FFD700' },
+      { name: 'Banyo', color: '#ADD8E6' }
+    ];
+  } else if (type === '1+1') {
+    baseRooms = [
+      { name: 'Oturma Odası', color: '#FFD700' },
+      { name: 'Mutfak', color: '#98FB98' },
+      { name: 'Yatak Odası', color: '#FFB6C1' },
+      { name: 'Banyo', color: '#ADD8E6' }
+    ];
+  } else if (type === '2+1') {
+    baseRooms = [
+      { name: 'Oturma Odası', color: '#FFD700' },
+      { name: 'Mutfak', color: '#98FB98' },
+      { name: 'Yatak Odası 1', color: '#FFB6C1' },
+      { name: 'Yatak Odası 2', color: '#FFB6C1' },
+      { name: 'Banyo', color: '#ADD8E6' }
+    ];
+  } else if (type === '3+1') {
+    baseRooms = [
+      { name: 'Oturma Odası', color: '#FFD700' },
+      { name: 'Mutfak', color: '#98FB98' },
+      { name: 'Yatak Odası 1', color: '#FFB6C1' },
+      { name: 'Yatak Odası 2', color: '#FFB6C1' },
+      { name: 'Yatak Odası 3', color: '#FFB6C1' },
+      { name: 'Banyo', color: '#ADD8E6' }
+    ];
+  }
+
+  const totalRoomCount = baseRooms.length;
+  const roomArea = areaSize / totalRoomCount;
+  const m2ToPx = 5;
+
+  const rooms = baseRooms.map((room, i) => {
+    const sideLength = Math.sqrt(roomArea) * m2ToPx;
+    const colCount = Math.ceil(Math.sqrt(totalRoomCount));
+    const row = Math.floor(i / colCount);
+    const col = i % colCount;
+
+    return {
+      ...room,
+      x: margin + col * (sideLength + 5),
+      y: 80 + row * (sideLength + 5),
+      w: sideLength,
+      h: sideLength
+    };
+  });
+
+  let svg = `<svg width="${width}" height="${height}">
+    <rect x="${margin}" y="60" width="${buildingWidth}" height="${buildingHeight}" 
+      fill="none" stroke="#000" stroke-width="2"/>
+    <text x="${width / 2}" y="40" font-size="20" text-anchor="middle">
+      ${projectName} - ${type.toUpperCase()} (${areaSize} m²)
+    </text>`;
+
+  rooms.forEach(r => {
+    svg += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" 
+              fill="${r.color}" stroke="#000" stroke-width="1"/>
+            <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2}" 
+              font-size="12" text-anchor="middle" dominant-baseline="middle">
+              ${r.name}
+            </text>`;
+  });
+
+  if (sides >= 1) svg += `<text x="${margin}" y="55" font-size="12">Sokak</text>`;
+  if (sides >= 2) svg += `<text x="${margin + buildingWidth - 40}" y="55" font-size="12">Sokak</text>`;
+  if (sides >= 3) svg += `<text x="${margin}" y="${60 + buildingHeight + 15}" font-size="12">Sokak</text>`;
+  if (sides >= 4) svg += `<text x="${margin + buildingWidth - 40}" y="${60 + buildingHeight + 15}" font-size="12">Sokak</text>`;
+
+  svg += `</svg>`;
+
+  document.getElementById('svgContainer').innerHTML = svg;
+}
+</script>
+</body>
+</html>
