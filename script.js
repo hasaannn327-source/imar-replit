@@ -508,4 +508,88 @@ class FloorPlanGenerator {
             ctx.drawImage(img, 0, 0);
             
             // Proje bilgilerini ekle
- 
+ ctx.fillStyle = '#2c3e50';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText(this.elements.projectName.value || 'Kat Planı', 20, 30);
+            
+            ctx.font = '14px Arial';
+            ctx.fillText(this.elements.projectSpecs.textContent || '', 20, 55);
+            
+            // İndir
+            const link = document.createElement('a');
+            link.download = `${this.elements.projectName.value || 'kat-plani'}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        };
+        
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    }
+
+    printPlan() {
+        const printWindow = window.open('', '_blank');
+        const svgContent = this.elements.floorPlan.outerHTML;
+        const projectName = this.elements.projectName.value || 'Kat Planı';
+        const projectSpecs = this.elements.projectSpecs.textContent || '';
+        
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${projectName}</title>
+                <style>
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        margin: 20px;
+                        background: white;
+                    }
+                    .header {
+                        margin-bottom: 20px;
+                        border-bottom: 2px solid #2c3e50;
+                        padding-bottom: 10px;
+                    }
+                    .header h1 {
+                        color: #2c3e50;
+                        margin: 0 0 10px 0;
+                    }
+                    .header p {
+                        color: #666;
+                        margin: 0;
+                    }
+                    .floor-plan {
+                        text-align: center;
+                        margin: 20px 0;
+                    }
+                    svg {
+                        max-width: 100%;
+                        border: 1px solid #ddd;
+                    }
+                    @media print {
+                        body { margin: 0; }
+                        .header { page-break-after: avoid; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>${projectName}</h1>
+                    <p>${projectSpecs}</p>
+                    <p>Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>
+                </div>
+                <div class="floor-plan">
+                    ${svgContent}
+                </div>
+            </body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.print();
+        }, 250);
+    }
+}
+
+// Sayfa yüklendiğinde başlat
+document.addEventListener('DOMContentLoaded', () => {
+    new FloorPlanGenerator();
+});
