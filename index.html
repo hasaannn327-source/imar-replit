@@ -6,6 +6,20 @@
     <title>Dinamik Kat Planı Çizici</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+    
+    <!-- iOS PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Kat Planı Çizici">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icon-16.png">
 </head>
 <body>
     <div class="container">
@@ -130,6 +144,19 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- PWA Yükleme Bildirimi -->
+    <div id="pwaInstallBanner" class="pwa-install-banner hidden">
+        <div class="pwa-install-content">
+            <i class="fas fa-mobile-alt"></i>
+            <div class="pwa-install-text">
+                <h4>Uygulamayı Yükle</h4>
+                <p>Ana ekranına ekleyerek hızlı erişim sağla</p>
+            </div>
+            <button id="pwaInstallBtn" class="pwa-install-btn">Yükle</button>
+            <button id="pwaCloseBtn" class="pwa-close-btn">&times;</button>
         </div>
     </div>
 
