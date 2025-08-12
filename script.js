@@ -2,6 +2,7 @@ class FloorPlanGenerator {
     constructor() {
         this.initializeElements();
         this.attachEventListeners();
+        this.initializePWA();
         this.generateFloorPlan(); // İlk yüklemede plan oluştur
     }
 
@@ -40,6 +41,53 @@ class FloorPlanGenerator {
         this.elements.printBtn.addEventListener('click', () => this.printPlan());
     }
 
+    initializePWA() {
+        // PWA yükleme banner'ı için event listener
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            this.showInstallBanner();
+        });
+
+        // PWA yükleme butonları
+        const installBtn = document.getElementById('pwaInstallBtn');
+        const closeBtn = document.getElementById('pwaCloseBtn');
+        
+        if (installBtn) {
+            installBtn.addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`User response: ${outcome}`);
+                    deferredPrompt = null;
+                    this.hideInstallBanner();
+                }
+            });
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                this.hideInstallBanner();
+            });
+        }
+    }
+
+    showInstallBanner() {
+        const banner = document.getElementById('pwaInstallBanner');
+        if (banner) {
+            banner.classList.remove('hidden');
+        }
+    }
+
+    hideInstallBanner() {
+        const banner = document.getElementById('pwaInstallBanner');
+        if (banner) {
+            banner.classList.add('hidden');
+        }
+    }
+
     syncAreaInputs() {
         const value = this.elements.totalArea.value;
         this.elements.areaSlider.value = value;
@@ -74,7 +122,7 @@ class FloorPlanGenerator {
 
     getRoomConfiguration(apartmentType) {
         const configurations = {
-            '1+0': { bedrooms: 1, livingRoom: true, bathrooms: 1, kitchen: true },
+            '1+0': { bedrooms: 0, livingRoom: true, bathrooms: 1, kitchen: true },
             '1+1': { bedrooms: 1, livingRoom: true, bathrooms: 1, kitchen: true },
             '2+1': { bedrooms: 2, livingRoom: true, bathrooms: 1, kitchen: true },
             '3+1': { bedrooms: 3, livingRoom: true, bathrooms: 2, kitchen: true },
@@ -87,33 +135,28 @@ class FloorPlanGenerator {
     calculateRoomAreas(totalArea, roomConfig) {
         const { bedrooms, bathrooms } = roomConfig;
         
-        // Alan dağılım oranları - daha gerçekçi ve doğru hesaplama
-        let livingRoomRatio = Math.max(0.3, 0.45 - (bedrooms * 0.05)); // Salon en az %30
-        let kitchenRatio = Math.min(0.15, Math.max(0.08, 0.1 + (totalArea / 2000))); // Mutfak %8-15 arası
-        let bathroomRatio = (0.06 * bathrooms); // Her banyo için %6
-        let bedroomRatio = (1 - livingRoomRatio - kitchenRatio - bathroomRatio) / bedrooms;
+        // Alan dağılım oranları - daha gerçekçi hesaplama
+        let livingRoomRatio = 0.35; // %35 salon
+        let kitchenRatio = 0.12; // %12 mutfak
+        let bathroomRatio = 0.08; // Her banyo için %8
         
-        // Oranları kontrol et ve normalize et
-        const totalRatio = livingRoomRatio + kitchenRatio + bathroomRatio + (bedroomRatio * bedrooms);
-        if (totalRatio > 1) {
-            // Oranları normalize et
-            livingRoomRatio = livingRoomRatio / totalRatio;
-            kitchenRatio = kitchenRatio / totalRatio;
-            bathroomRatio = bathroomRatio / totalRatio;
-            bedroomRatio = bedroomRatio / totalRatio;
-        }
+        // Kalan alan yatak odalarına
+        const totalFixedRatio = livingRoomRatio + kitchenRatio + (bathroomRatio * bathrooms);
+        const remainingRatio = 1 - totalFixedRatio;
+        const bedroomRatio = bedrooms > 0 ? remainingRatio / bedrooms : 0;
         
-        const livingRoomArea = Math.max(15, Math.round(totalArea * livingRoomRatio));
+        // Alan hesaplamaları
+        const livingRoomArea = Math.max(12, Math.round(totalArea * livingRoomRatio));
         const kitchenArea = Math.max(6, Math.round(totalArea * kitchenRatio));
         const bathroomArea = Math.max(3, Math.round(totalArea * bathroomRatio));
-        const bedroomArea = Math.max(8, Math.round(totalArea * bedroomRatio));
+        const bedroomArea = bedrooms > 0 ? Math.max(8, Math.round(totalArea * bedroomRatio)) : 0;
         
-        // Toplam kontrol et ve düzelt
+        // Toplam alan kontrolü ve düzeltme
         const calculatedTotal = livingRoomArea + kitchenArea + (bathroomArea * bathrooms) + (bedroomArea * bedrooms);
         const difference = totalArea - calculatedTotal;
         
-        // Farkı salon alanına ekle/çıkar
-        const adjustedLivingRoom = Math.max(15, livingRoomArea + difference);
+        // Farkı salon alanına ekle
+        const adjustedLivingRoom = Math.max(12, livingRoomArea + difference);
         
         return {
             livingRoom: adjustedLivingRoom,
@@ -131,11 +174,9 @@ class FloorPlanGenerator {
         const roomConfig = this.getRoomConfiguration(apartmentType);
         const areas = this.calculateRoomAreas(totalArea, roomConfig);
         
-        // SVG boyutları - alan büyüklüğüne göre ölçekle
-        const baseSize = 400;
-        const scale = Math.sqrt(totalArea / 100);
-        const width = Math.min(600, baseSize * Math.min(scale, 1.5));
-        const height = Math.min(450, baseSize * 0.75 * Math.min(scale, 1.5));
+        // SVG boyutları
+        const width = 600;
+        const height = 450;
         
         const rooms = [];
         const isCorner = streetFacing >= 2;
@@ -151,10 +192,11 @@ class FloorPlanGenerator {
 
     generateCornerLayout(width, height, roomConfig, areas) {
         const rooms = [];
+        const { bedrooms, bathrooms } = roomConfig;
         
-        // Salon (sol alt köşe - büyük alan)
-        const livingW = width * 0.55;
-        const livingH = height * 0.5;
+        // Salon (sol alt - en büyük alan)
+        const livingW = width * 0.5;
+        const livingH = height * 0.55;
         rooms.push({
             type: 'Salon',
             x: 0,
@@ -168,7 +210,7 @@ class FloorPlanGenerator {
         
         // Mutfak (sağ alt)
         const kitchenW = width - livingW;
-        const kitchenH = height * 0.35;
+        const kitchenH = height * 0.3;
         rooms.push({
             type: 'Mutfak',
             x: livingW,
@@ -180,28 +222,32 @@ class FloorPlanGenerator {
             class: 'kitchen'
         });
         
-        // Yatak odaları (üst sıra)
-        const bedroomW = width / roomConfig.bedrooms;
-        for (let i = 0; i < roomConfig.bedrooms; i++) {
-            rooms.push({
-                type: roomConfig.bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
-                x: i * bedroomW,
-                y: 0,
-                width: bedroomW,
-                height: height * 0.4,
-                area: areas.bedroom,
-                color: '#f3e5f5',
-                class: 'bedroom'
-            });
+        // Yatak odaları (üst sıra) - sadece yatak odası varsa
+        if (bedrooms > 0) {
+            const bedroomW = width / bedrooms;
+            for (let i = 0; i < bedrooms; i++) {
+                rooms.push({
+                    type: bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
+                    x: i * bedroomW,
+                    y: 0,
+                    width: bedroomW,
+                    height: height * 0.35,
+                    area: areas.bedroom,
+                    color: '#f3e5f5',
+                    class: 'bedroom'
+                });
+            }
         }
         
         // Banyolar (sağ orta)
-        const bathroomH = (height - kitchenH) / roomConfig.bathrooms;
-        for (let i = 0; i < roomConfig.bathrooms; i++) {
+        const availableHeight = height - kitchenH - (bedrooms > 0 ? height * 0.35 : 0);
+        const bathroomH = availableHeight / bathrooms;
+        for (let i = 0; i < bathrooms; i++) {
+            const yPosition = (bedrooms > 0 ? height * 0.35 : 0) + (i * bathroomH);
             rooms.push({
-                type: roomConfig.bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
+                type: bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
                 x: livingW,
-                y: height * 0.4 + (i * bathroomH),
+                y: yPosition,
                 width: kitchenW,
                 height: bathroomH,
                 area: areas.bathroom,
@@ -215,14 +261,15 @@ class FloorPlanGenerator {
 
     generateSingleFacadeLayout(width, height, roomConfig, areas) {
         const rooms = [];
+        const { bedrooms, bathrooms } = roomConfig;
         
         // Salon (merkez)
-        const livingW = width * 0.5;
-        const livingH = height * 0.55;
+        const livingW = width * 0.45;
+        const livingH = height * 0.6;
         rooms.push({
             type: 'Salon',
-            x: width * 0.25,
-            y: height * 0.25,
+            x: width * 0.3,
+            y: height * 0.2,
             width: livingW,
             height: livingH,
             area: areas.livingRoom,
@@ -231,7 +278,7 @@ class FloorPlanGenerator {
         });
         
         // Mutfak (sol alt)
-        const kitchenW = width * 0.25;
+        const kitchenW = width * 0.3;
         const kitchenH = height * 0.3;
         rooms.push({
             type: 'Mutfak',
@@ -244,27 +291,30 @@ class FloorPlanGenerator {
             class: 'kitchen'
         });
         
-        // Yatak odaları (sağ sütun)
-        const bedroomW = width * 0.25;
-        const bedroomH = height / roomConfig.bedrooms;
-        for (let i = 0; i < roomConfig.bedrooms; i++) {
-            rooms.push({
-                type: roomConfig.bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
-                x: width * 0.75,
-                y: i * bedroomH,
-                width: bedroomW,
-                height: bedroomH,
-                area: areas.bedroom,
-                color: '#f3e5f5',
-                class: 'bedroom'
-            });
+        // Yatak odaları (sağda) - sadece yatak odası varsa
+        if (bedrooms > 0) {
+            const bedroomW = width * 0.25;
+            const bedroomH = height / bedrooms;
+            for (let i = 0; i < bedrooms; i++) {
+                rooms.push({
+                    type: bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
+                    x: width * 0.75,
+                    y: i * bedroomH,
+                    width: bedroomW,
+                    height: bedroomH,
+                    area: areas.bedroom,
+                    color: '#f3e5f5',
+                    class: 'bedroom'
+                });
+            }
         }
         
         // Banyolar (sol üst)
-        const bathroomH = (height - kitchenH) / roomConfig.bathrooms;
-        for (let i = 0; i < roomConfig.bathrooms; i++) {
+        const availableHeight = height - kitchenH;
+        const bathroomH = availableHeight / bathrooms;
+        for (let i = 0; i < bathrooms; i++) {
             rooms.push({
-                type: roomConfig.bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
+                type: bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
                 x: 0,
                 y: i * bathroomH,
                 width: kitchenW,
@@ -348,39 +398,43 @@ class FloorPlanGenerator {
         
         group.appendChild(rect);
         
-        // Oda ismi
+        // Oda ismi - metin boyutunu oda boyutuna göre ayarla
+        const fontSize = Math.min(14, Math.max(10, room.width / 12, room.height / 8));
         const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         nameText.setAttribute('x', room.x + room.width / 2);
         nameText.setAttribute('y', room.y + room.height / 2 - 8);
         nameText.setAttribute('text-anchor', 'middle');
         nameText.setAttribute('class', 'room-text');
-        nameText.setAttribute('font-size', Math.min(14, room.width / 8));
+        nameText.setAttribute('font-size', fontSize);
         nameText.setAttribute('fill', '#2c3e50');
         nameText.setAttribute('font-weight', 'bold');
         nameText.textContent = room.type;
         group.appendChild(nameText);
         
         // Alan bilgisi
+        const areaFontSize = Math.min(12, Math.max(8, room.width / 15, room.height / 10));
         const areaText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         areaText.setAttribute('x', room.x + room.width / 2);
         areaText.setAttribute('y', room.y + room.height / 2 + 10);
         areaText.setAttribute('text-anchor', 'middle');
         areaText.setAttribute('class', 'room-area-text');
-        areaText.setAttribute('font-size', Math.min(12, room.width / 10));
+        areaText.setAttribute('font-size', areaFontSize);
         areaText.setAttribute('fill', '#666');
         areaText.textContent = `${room.area} m²`;
         group.appendChild(areaText);
         
-        // Boyut bilgileri (küçük odalar için sadece alan göster)
-        if (room.width > 60 && room.height > 40) {
+        // Boyut bilgileri (yeterince büyük odalar için)
+        if (room.width > 80 && room.height > 60) {
             const dimensionText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             dimensionText.setAttribute('x', room.x + room.width / 2);
             dimensionText.setAttribute('y', room.y + room.height / 2 + 25);
             dimensionText.setAttribute('text-anchor', 'middle');
             dimensionText.setAttribute('font-size', '10');
             dimensionText.setAttribute('fill', '#999');
-            const widthM = Math.round((room.width / width) * 15 * 100) / 100;
-            const heightM = Math.round((room.height / height) * 12 * 100) / 100;
+            
+            // Yaklaşık boyutları hesapla (1 piksel ≈ 2.5 cm)
+            const widthM = Math.round((room.width / 24) * 100) / 100; // 600px = 15m varsayımı
+            const heightM = Math.round((room.height / 18) * 100) / 100; // 450px = 12m varsayımı
             dimensionText.textContent = `${widthM}m × ${heightM}m`;
             group.appendChild(dimensionText);
         }
@@ -408,7 +462,7 @@ class FloorPlanGenerator {
         arrow.setAttribute('fill', '#e74c3c');
         group.appendChild(arrow);
         
-        // N harfi
+        // K harfi (Kuzey)
         const nText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         nText.setAttribute('x', '0');
         nText.setAttribute('y', '35');
@@ -426,8 +480,8 @@ class FloorPlanGenerator {
         const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         group.setAttribute('transform', `translate(20, ${height - 30})`);
         
-        // Ölçek çizgisi (5m temsili)
-        const scaleLength = 75;
+        // Ölçek çizgisi (2m temsili)
+        const scaleLength = 48; // 600px = 15m, o halde 48px = 1.2m ≈ 2m olarak gösterelim
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', '0');
         line.setAttribute('y1', '0');
@@ -457,14 +511,14 @@ class FloorPlanGenerator {
         rightTick.setAttribute('stroke-width', '2');
         group.appendChild(rightTick);
         
-        // Ölçek metni
-        const scaleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        // Ölçek m
+    const scaleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         scaleText.setAttribute('x', scaleLength / 2);
         scaleText.setAttribute('y', '-10');
         scaleText.setAttribute('text-anchor', 'middle');
         scaleText.setAttribute('font-size', '10');
         scaleText.setAttribute('fill', '#2c3e50');
-        scaleText.textContent = '5m';
+        scaleText.textContent = '2m';
         group.appendChild(scaleText);
         
         svg.appendChild(group);
@@ -479,9 +533,9 @@ class FloorPlanGenerator {
             roomCard.className = `room-card ${room.class} slide-in`;
             roomCard.style.animationDelay = `${index * 0.1}s`;
             
-            // Boyut hesapla (daha doğru)
-            const roomWidth = Math.round((room.width / 600) * 15 * 100) / 100; // SVG genişliğini 15m kabul et
-            const roomHeight = Math.round((room.height / 450) * 12 * 100) / 100; // SVG yüksekliğini 12m kabul et
+            // Boyut hesapla (daha doğru hesaplama)
+            const roomWidth = Math.round((room.width / 24) * 100) / 100; // 600px = 15m
+            const roomHeight = Math.round((room.height / 18) * 100) / 100; // 450px = 12m
             
             roomCard.innerHTML = `
                 <h4><i class="fas ${this.getRoomIcon(room.type)}"></i> ${room.type}</h4>
@@ -550,7 +604,7 @@ class FloorPlanGenerator {
             
             // İndir
             const link = document.createElement('a');
-            link.download = `${this.elements.projectName.value || 'kat-plani'}.png`;
+            link.download = `${(this.elements.projectName.value || 'kat-plani').replace(/\s+/g, '-')}.png`;
             link.href = canvas.toDataURL();
             link.click();
         };
@@ -565,78 +619,3 @@ class FloorPlanGenerator {
         const projectSpecs = this.elements.projectSpecs.textContent || '';
         
         printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>${projectName}</title>
-                <style>
-                    body { 
-                        font-family: Arial, sans-serif; 
-                        margin: 20px;
-                        background: white;
-                    }
-                    .header {
-                        margin-bottom: 20px;
-                        border-bottom: 2px solid #2c3e50;
-                        padding-bottom: 10px;
-                    }
-                    .header h1 {
-                        color: #2c3e50;
-                        margin: 0 0 10px 0;
-                    }
-                    .header p {
-                        color: #666;
-                        margin: 0;
-                    }
-                    .floor-plan {
-                        text-align: center;
-                        margin: 20px 0;
-                    }
-                    svg {
-                        max-width: 100%;
-                        border: 1px solid #ddd;
-                    }
-                    @media print {
-                        body { margin: 0; }
-                        .header { page-break-after: avoid; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>${projectName}</h1>
-                    <p>${projectSpecs}</p>
-                    <p>Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')}</p>
-                </div>
-                <div class="floor-plan">
-                    ${svgContent}
-                </div>
-            </body>
-            </html>
-        `);
-        
-        printWindow.document.close();
-        setTimeout(() => {
-            printWindow.print();
-        }, 250);
-    }
-}
-
-// Sayfa yüklendiğinde başlat
-document.addEventListener('DOMContentLoaded', () => {
-    new FloorPlanGenerator();
-});
-
-// PWA için Service Worker kayıt
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then(registration => {
-                console.log('SW registered: ', registration);
-            })
-            .catch(registrationError => {
-                console.log('SW registration failed: ', registrationError);
-            });
-    });
-}
-    
