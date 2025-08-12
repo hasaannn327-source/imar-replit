@@ -87,17 +87,39 @@ class FloorPlanGenerator {
     calculateRoomAreas(totalArea, roomConfig) {
         const { bedrooms, bathrooms } = roomConfig;
         
-        // Alan dağılım oranları - daha gerçekçi
-        const livingRoomRatio = Math.max(0.25, 0.4 - (bedrooms * 0.02)); // Yatak odası sayısına göre azal
-        const bedroomRatio = (0.5 - (bathrooms * 0.05)) / bedrooms; // Banyo sayısına göre ayarla
-        const kitchenRatio = Math.min(0.15, 0.1 + (totalArea / 1000)); // Alan büyüdükçe mutfak oranı artır
-        const bathroomRatio = (0.25 - livingRoomRatio - (bedroomRatio * bedrooms) - kitchenRatio) / bathrooms;
+        // Alan dağılım oranları - daha gerçekçi ve doğru hesaplama
+        let livingRoomRatio = Math.max(0.3, 0.45 - (bedrooms * 0.05)); // Salon en az %30
+        let kitchenRatio = Math.min(0.15, Math.max(0.08, 0.1 + (totalArea / 2000))); // Mutfak %8-15 arası
+        let bathroomRatio = (0.06 * bathrooms); // Her banyo için %6
+        let bedroomRatio = (1 - livingRoomRatio - kitchenRatio - bathroomRatio) / bedrooms;
+        
+        // Oranları kontrol et ve normalize et
+        const totalRatio = livingRoomRatio + kitchenRatio + bathroomRatio + (bedroomRatio * bedrooms);
+        if (totalRatio > 1) {
+            // Oranları normalize et
+            livingRoomRatio = livingRoomRatio / totalRatio;
+            kitchenRatio = kitchenRatio / totalRatio;
+            bathroomRatio = bathroomRatio / totalRatio;
+            bedroomRatio = bedroomRatio / totalRatio;
+        }
+        
+        const livingRoomArea = Math.max(15, Math.round(totalArea * livingRoomRatio));
+        const kitchenArea = Math.max(6, Math.round(totalArea * kitchenRatio));
+        const bathroomArea = Math.max(3, Math.round(totalArea * bathroomRatio));
+        const bedroomArea = Math.max(8, Math.round(totalArea * bedroomRatio));
+        
+        // Toplam kontrol et ve düzelt
+        const calculatedTotal = livingRoomArea + kitchenArea + (bathroomArea * bathrooms) + (bedroomArea * bedrooms);
+        const difference = totalArea - calculatedTotal;
+        
+        // Farkı salon alanına ekle/çıkar
+        const adjustedLivingRoom = Math.max(15, livingRoomArea + difference);
         
         return {
-            livingRoom: Math.round(totalArea * livingRoomRatio),
-            bedroom: Math.round(totalArea * bedroomRatio),
-            kitchen: Math.round(totalArea * kitchenRatio),
-            bathroom: Math.round(totalArea * bathroomRatio)
+            livingRoom: adjustedLivingRoom,
+            bedroom: bedroomArea,
+            kitchen: kitchenArea,
+            bathroom: bathroomArea
         };
     }
 
@@ -112,8 +134,8 @@ class FloorPlanGenerator {
         // SVG boyutları - alan büyüklüğüne göre ölçekle
         const baseSize = 400;
         const scale = Math.sqrt(totalArea / 100);
-        const width = baseSize * Math.min(scale, 1.5);
-        const height = baseSize * 0.75 * Math.min(scale, 1.5);
+        const width = Math.min(600, baseSize * Math.min(scale, 1.5));
+        const height = Math.min(450, baseSize * 0.75 * Math.min(scale, 1.5));
         
         const rooms = [];
         const isCorner = streetFacing >= 2;
@@ -357,7 +379,9 @@ class FloorPlanGenerator {
             dimensionText.setAttribute('text-anchor', 'middle');
             dimensionText.setAttribute('font-size', '10');
             dimensionText.setAttribute('fill', '#999');
-            dimensionText.textContent = `${Math.round(room.width/15)}m × ${Math.round(room.height/15)}m`;
+            const widthM = Math.round((room.width / width) * 15 * 100) / 100;
+            const heightM = Math.round((room.height / height) * 12 * 100) / 100;
+            dimensionText.textContent = `${widthM}m × ${heightM}m`;
             group.appendChild(dimensionText);
         }
         
@@ -403,10 +427,11 @@ class FloorPlanGenerator {
         group.setAttribute('transform', `translate(20, ${height - 30})`);
         
         // Ölçek çizgisi (5m temsili)
+        const scaleLength = 75;
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', '0');
         line.setAttribute('y1', '0');
-        line.setAttribute('x2', '75'); // 5m = 75px
+        line.setAttribute('x2', scaleLength);
         line.setAttribute('y2', '0');
         line.setAttribute('stroke', '#2c3e50');
         line.setAttribute('stroke-width', '2');
@@ -424,9 +449,9 @@ class FloorPlanGenerator {
         
         // Sağ dikey çizgi
         const rightTick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        rightTick.setAttribute('x1', '75');
+        rightTick.setAttribute('x1', scaleLength);
         rightTick.setAttribute('y1', '-5');
-        rightTick.setAttribute('x2', '75');
+        rightTick.setAttribute('x2', scaleLength);
         rightTick.setAttribute('y2', '5');
         rightTick.setAttribute('stroke', '#2c3e50');
         rightTick.setAttribute('stroke-width', '2');
@@ -434,7 +459,7 @@ class FloorPlanGenerator {
         
         // Ölçek metni
         const scaleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        scaleText.setAttribute('x', '37.5');
+        scaleText.setAttribute('x', scaleLength / 2);
         scaleText.setAttribute('y', '-10');
         scaleText.setAttribute('text-anchor', 'middle');
         scaleText.setAttribute('font-size', '10');
@@ -454,11 +479,15 @@ class FloorPlanGenerator {
             roomCard.className = `room-card ${room.class} slide-in`;
             roomCard.style.animationDelay = `${index * 0.1}s`;
             
+            // Boyut hesapla (daha doğru)
+            const roomWidth = Math.round((room.width / 600) * 15 * 100) / 100; // SVG genişliğini 15m kabul et
+            const roomHeight = Math.round((room.height / 450) * 12 * 100) / 100; // SVG yüksekliğini 12m kabul et
+            
             roomCard.innerHTML = `
                 <h4><i class="fas ${this.getRoomIcon(room.type)}"></i> ${room.type}</h4>
                 <div class="room-area">${room.area} m²</div>
                 <div class="room-dimensions">
-                    Boyutlar: ${Math.round(room.width/15)}m × ${Math.round(room.height/15)}m
+                    Boyutlar: ${roomWidth}m × ${roomHeight}m
                 </div>
             `;
             
@@ -505,15 +534,19 @@ class FloorPlanGenerator {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
             // SVG'yi çiz
-            ctx.drawImage(img, 0, 0);
+            ctx.drawImage(img, 50, 80, 700, 450);
             
             // Proje bilgilerini ekle
- ctx.fillStyle = '#2c3e50';
+            ctx.fillStyle = '#2c3e50';
             ctx.font = 'bold 20px Arial';
-            ctx.fillText(this.elements.projectName.value || 'Kat Planı', 20, 30);
+            ctx.fillText(this.elements.projectName.value || 'Kat Planı', 50, 40);
             
             ctx.font = '14px Arial';
-            ctx.fillText(this.elements.projectSpecs.textContent || '', 20, 55);
+            ctx.fillText(this.elements.projectSpecs.textContent || '', 50, 65);
+            
+            // Tarih ekle
+            ctx.font = '12px Arial';
+            ctx.fillText(`Oluşturulma: ${new Date().toLocaleDateString('tr-TR')}`, 50, 580);
             
             // İndir
             const link = document.createElement('a');
@@ -593,3 +626,17 @@ class FloorPlanGenerator {
 document.addEventListener('DOMContentLoaded', () => {
     new FloorPlanGenerator();
 });
+
+// PWA için Service Worker kayıt
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+                console.log('SW registered: ', registration);
+            })
+            .catch(registrationError => {
+                console.log('SW registration failed: ', registrationError);
+            });
+    });
+}
+    
