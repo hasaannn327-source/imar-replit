@@ -1,0 +1,30 @@
+{
+  "name": "kat-plani-olusturucu",
+  "version": "1.0.0",
+  "description": "Dinamik mimari kat planı oluşturma PWA uygulaması",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve -s . -l 3000",
+    "build": "echo 'No build process needed - static files'",
+    "dev": "npx serve -s . -l 3000 --cors",
+    "deploy": "echo 'Ready for deployment'",
+    "icon-gen": "npx pwa-asset-generator logo.svg icons --manifest manifest.json"
+  },
+  "keywords": [
+    "pwa",
+    "floor-plan",
+    "architecture",
+    "react",
+    "svg",
+    "mobile-app"
+  ],
+  "author": "Hasane",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.0.0",
+    "pwa-asset-generator": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
