@@ -1,621 +1,361 @@
-class FloorPlanGenerator {
-    constructor() {
-        this.initializeElements();
-        this.attachEventListeners();
-        this.initializePWA();
-        this.generateFloorPlan(); // İlk yüklemede plan oluştur
+import React, { useState, useEffect } from 'react';
+import { Download, Home, Settings } from 'lucide-react';
+
+const FloorPlanGenerator = () => {
+  const [projectName, setProjectName] = useState('');
+  const [roomConfig, setRoomConfig] = useState('2+1');
+  const [totalM2, setTotalM2] = useState(100);
+  const [roadFaces, setRoadFaces] = useState(1);
+  const [floorPlan, setFloorPlan] = useState(null);
+
+  // PWA manifest ve service worker setup
+  useEffect(() => {
+    // PWA için manifest
+    const manifest = {
+      name: 'Kat Planı Oluşturucu',
+      short_name: 'KatPlani',
+      description: 'Dinamik mimari kat planı oluşturma uygulaması',
+      start_url: '/',
+      display: 'standalone',
+      background_color: '#ffffff',
+      theme_color: '#3b82f6',
+      icons: [
+        {
+          src: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iOTYiIGN5PSI5NiIgcj0iOTYiIGZpbGw9IiMzYjgyZjYiLz48cGF0aCBkPSJNNDggNjRoOTZ2NjRINDhWNjR6IiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==',
+          sizes: '192x192',
+          type: 'image/svg+xml'
+        }
+      ]
+    };
+    
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const manifestURL = URL.createObjectURL(manifestBlob);
+    
+    let manifestLink = document.querySelector('link[rel="manifest"]');
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.head.appendChild(manifestLink);
+    }
+    manifestLink.href = manifestURL;
+
+    return () => URL.revokeObjectURL(manifestURL);
+  }, []);
+
+  const calculateRoomSizes = (config, totalArea) => {
+    const baseRooms = {
+      '1+1': { salon: 0.4, yatak1: 0.25, mutfak: 0.15, banyo: 0.1, koridor: 0.1 },
+      '2+1': { salon: 0.35, yatak1: 0.2, yatak2: 0.15, mutfak: 0.15, banyo: 0.08, koridor: 0.07 },
+      '3+1': { salon: 0.3, yatak1: 0.18, yatak2: 0.15, yatak3: 0.12, mutfak: 0.12, banyo: 0.08, koridor: 0.05 },
+      '4+1': { salon: 0.25, yatak1: 0.16, yatak2: 0.14, yatak3: 0.12, yatak4: 0.1, mutfak: 0.12, banyo: 0.08, koridor: 0.03 }
+    };
+
+    const ratios = baseRooms[config] || baseRooms['2+1'];
+    const rooms = {};
+    
+    Object.keys(ratios).forEach(room => {
+      rooms[room] = Math.round(totalArea * ratios[room]);
+    });
+
+    return rooms;
+  };
+
+  const generateFloorPlan = () => {
+    const rooms = calculateRoomSizes(roomConfig, totalM2);
+    const plan = createFloorPlanSVG(rooms, roadFaces);
+    setFloorPlan(plan);
+  };
+
+  const createFloorPlanSVG = (rooms, faces) => {
+    const width = 800;
+    const height = 600;
+    const margin = 40;
+    
+    // Yol cephesi sayısına göre genel şekil
+    let buildingWidth, buildingHeight;
+    if (faces === 1) {
+      buildingWidth = width - 2 * margin;
+      buildingHeight = height - 2 * margin;
+    } else if (faces === 2) {
+      buildingWidth = width - 2 * margin;
+      buildingHeight = height - 2 * margin - 50;
+    } else {
+      buildingWidth = width - 2 * margin - 60;
+      buildingHeight = height - 2 * margin - 60;
     }
 
-    initializeElements() {
-        this.elements = {
-            projectName: document.getElementById('projectName'),
-            apartmentType: document.getElementById('apartmentType'),
-            totalArea: document.getElementById('totalArea'),
-            areaSlider: document.getElementById('areaSlider'),
-            streetFacing: document.getElementById('streetFacing'),
-            generateBtn: document.getElementById('generateBtn'),
-            projectInfo: document.getElementById('projectInfo'),
-            projectTitle: document.getElementById('projectTitle'),
-            projectSpecs: document.getElementById('projectSpecs'),
-            floorPlan: document.getElementById('floorPlan'),
-            roomDetails: document.getElementById('roomDetails'),
-            summaryArea: document.getElementById('summaryArea'),
-            summaryRooms: document.getElementById('summaryRooms'),
-            livableArea: document.getElementById('livableArea'),
-            downloadBtn: document.getElementById('downloadBtn'),
-            printBtn: document.getElementById('printBtn')
+    const roomElements = [];
+    const roomNames = Object.keys(rooms);
+    const totalRooms = roomNames.length;
+
+    // Grid hesaplama
+    const cols = Math.ceil(Math.sqrt(totalRooms));
+    const rows = Math.ceil(totalRooms / cols);
+    
+    const cellWidth = buildingWidth / cols;
+    const cellHeight = buildingHeight / rows;
+
+    let roomIndex = 0;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        if (roomIndex >= totalRooms) break;
+        
+        const roomName = roomNames[roomIndex];
+        const roomArea = rooms[roomName];
+        
+        // Oda boyutunu alana göre ayarla
+        const areaRatio = Math.sqrt(roomArea / 25); // 25m2 referans
+        const roomWidth = Math.min(cellWidth * 0.9, cellWidth * areaRatio * 0.8 + cellWidth * 0.3);
+        const roomHeight = Math.min(cellHeight * 0.9, cellHeight * areaRatio * 0.8 + cellHeight * 0.3);
+        
+        const x = margin + col * cellWidth + (cellWidth - roomWidth) / 2;
+        const y = margin + row * cellHeight + (cellHeight - roomHeight) / 2;
+
+        // Oda rengini belirle
+        const roomColors = {
+          salon: '#e0f2fe',
+          mutfak: '#fff3e0',
+          banyo: '#f3e5f5',
+          koridor: '#f1f8e9',
+          yatak1: '#fff8e1',
+          yatak2: '#fce4ec',
+          yatak3: '#e8f5e8',
+          yatak4: '#fff3e0'
         };
+
+        const color = roomColors[roomName] || '#f5f5f5';
+
+        roomElements.push(
+          <g key={roomName}>
+            <rect
+              x={x}
+              y={y}
+              width={roomWidth}
+              height={roomHeight}
+              fill={color}
+              stroke="#333"
+              strokeWidth="2"
+              rx="4"
+            />
+            <text
+              x={x + roomWidth / 2}
+              y={y + roomHeight / 2 - 10}
+              textAnchor="middle"
+              className="text-sm font-semibold"
+              fill="#333"
+            >
+              {roomName.charAt(0).toUpperCase() + roomName.slice(1)}
+            </text>
+            <text
+              x={x + roomWidth / 2}
+              y={y + roomHeight / 2 + 8}
+              textAnchor="middle"
+              className="text-xs"
+              fill="#666"
+            >
+              {roomArea}m²
+            </text>
+          </g>
+        );
+
+        roomIndex++;
+      }
     }
 
-    attachEventListeners() {
-        // Form değişikliklerini dinle
-        this.elements.projectName.addEventListener('input', () => this.updateProjectInfo());
-        this.elements.apartmentType.addEventListener('change', () => this.generateFloorPlan());
-        this.elements.totalArea.addEventListener('input', () => this.syncAreaInputs());
-        this.elements.areaSlider.addEventListener('input', () => this.syncAreaSlider());
-        this.elements.streetFacing.addEventListener('change', () => this.generateFloorPlan());
-        
-        // Butonlar
-        this.elements.generateBtn.addEventListener('click', () => this.generateFloorPlan());
-        this.elements.downloadBtn.addEventListener('click', () => this.downloadPlan());
-        this.elements.printBtn.addEventListener('click', () => this.printPlan());
+    // Yol cephesi gösterimi
+    const roadElements = [];
+    if (faces >= 1) {
+      roadElements.push(
+        <rect key="road1" x={margin - 20} y={height - 30} width={buildingWidth + 40} height={20} fill="#666" />
+      );
+    }
+    if (faces >= 2) {
+      roadElements.push(
+        <rect key="road2" x={10} y={margin} width={20} height={buildingHeight} fill="#666" />
+      );
+    }
+    if (faces >= 3) {
+      roadElements.push(
+        <rect key="road3" x={margin - 20} y={10} width={buildingWidth + 40} height={20} fill="#666" />
+      );
     }
 
-    initializePWA() {
-        // PWA yükleme banner'ı için event listener
-        let deferredPrompt;
+    return (
+      <svg width={width} height={height} className="border border-gray-300 bg-white rounded-lg">
+        {/* Yollar */}
+        {roadElements}
         
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            this.showInstallBanner();
-        });
+        {/* Ana bina çerçevesi */}
+        <rect
+          x={margin}
+          y={margin}
+          width={buildingWidth}
+          height={buildingHeight}
+          fill="none"
+          stroke="#000"
+          strokeWidth="3"
+        />
+        
+        {/* Odalar */}
+        {roomElements}
+        
+        {/* Başlık */}
+        <text x={width/2} y={25} textAnchor="middle" className="text-lg font-bold" fill="#333">
+          {projectName || 'Kat Planı'} - {roomConfig} ({totalM2}m²)
+        </text>
+      </svg>
+    );
+  };
 
-        // PWA yükleme butonları
-        const installBtn = document.getElementById('pwaInstallBtn');
-        const closeBtn = document.getElementById('pwaCloseBtn');
-        
-        if (installBtn) {
-            installBtn.addEventListener('click', async () => {
-                if (deferredPrompt) {
-                    deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    console.log(`User response: ${outcome}`);
-                    deferredPrompt = null;
-                    this.hideInstallBanner();
-                }
-            });
-        }
+  const downloadSVG = () => {
+    if (!floorPlan) return;
+    
+    const svgElement = document.querySelector('svg');
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(svgElement);
+    
+    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectName || 'kat-plani'}.svg`;
+    a.click();
+    
+    URL.revokeObjectURL(url);
+  };
 
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                this.hideInstallBanner();
-            });
-        }
-    }
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Home className="w-8 h-8 text-blue-600" />
+            <h1 className="text-2xl font-bold text-gray-800">Dinamik Kat Planı Oluşturucu</h1>
+          </div>
+          
+          {/* Form Controls */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Proje Adı
+              </label>
+              <input
+                type="text"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Proje adını girin"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
 
-    showInstallBanner() {
-        const banner = document.getElementById('pwaInstallBanner');
-        if (banner) {
-            banner.classList.remove('hidden');
-        }
-    }
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Oda Konfigürasyonu
+              </label>
+              <select
+                value={roomConfig}
+                onChange={(e) => setRoomConfig(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="1+1">1+1</option>
+                <option value="2+1">2+1</option>
+                <option value="3+1">3+1</option>
+                <option value="4+1">4+1</option>
+              </select>
+            </div>
 
-    hideInstallBanner() {
-        const banner = document.getElementById('pwaInstallBanner');
-        if (banner) {
-            banner.classList.add('hidden');
-        }
-    }
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Toplam M² ({totalM2}m²)
+              </label>
+              <input
+                type="range"
+                min="50"
+                max="300"
+                value={totalM2}
+                onChange={(e) => setTotalM2(parseInt(e.target.value))}
+                className="w-full"
+              />
+              <input
+                type="number"
+                min="50"
+                max="300"
+                value={totalM2}
+                onChange={(e) => setTotalM2(parseInt(e.target.value))}
+                className="w-full mt-1 px-3 py-1 border border-gray-300 rounded text-sm"
+              />
+            </div>
 
-    syncAreaInputs() {
-        const value = this.elements.totalArea.value;
-        this.elements.areaSlider.value = value;
-        this.generateFloorPlan();
-    }
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Yol Cephesi Sayısı
+              </label>
+              <select
+                value={roadFaces}
+                onChange={(e) => setRoadFaces(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value={1}>1 Cephe</option>
+                <option value={2}>2 Cephe</option>
+                <option value={3}>3+ Cephe</option>
+              </select>
+            </div>
+          </div>
 
-    syncAreaSlider() {
-        const value = this.elements.areaSlider.value;
-        this.elements.totalArea.value = value;
-        this.generateFloorPlan();
-    }
-
-    updateProjectInfo() {
-        const projectName = this.elements.projectName.value.trim();
-        if (projectName) {
-            this.elements.projectInfo.classList.remove('hidden');
-            this.elements.projectTitle.textContent = projectName;
-            this.updateProjectSpecs();
-        } else {
-            this.elements.projectInfo.classList.add('hidden');
-        }
-    }
-
-    updateProjectSpecs() {
-        const apartmentType = this.elements.apartmentType.value;
-        const totalArea = this.elements.totalArea.value;
-        const streetFacing = this.elements.streetFacing.value;
-        
-        this.elements.projectSpecs.textContent = 
-            `Daire Tipi: ${apartmentType} | Toplam Alan: ${totalArea} m² | Cephe: ${streetFacing} yön`;
-    }
-
-    getRoomConfiguration(apartmentType) {
-        const configurations = {
-            '1+0': { bedrooms: 0, livingRoom: true, bathrooms: 1, kitchen: true },
-            '1+1': { bedrooms: 1, livingRoom: true, bathrooms: 1, kitchen: true },
-            '2+1': { bedrooms: 2, livingRoom: true, bathrooms: 1, kitchen: true },
-            '3+1': { bedrooms: 3, livingRoom: true, bathrooms: 2, kitchen: true },
-            '4+1': { bedrooms: 4, livingRoom: true, bathrooms: 2, kitchen: true },
-            '5+1': { bedrooms: 5, livingRoom: true, bathrooms: 3, kitchen: true }
-        };
-        return configurations[apartmentType] || configurations['2+1'];
-    }
-
-    calculateRoomAreas(totalArea, roomConfig) {
-        const { bedrooms, bathrooms } = roomConfig;
-        
-        // Alan dağılım oranları - daha gerçekçi hesaplama
-        let livingRoomRatio = 0.35; // %35 salon
-        let kitchenRatio = 0.12; // %12 mutfak
-        let bathroomRatio = 0.08; // Her banyo için %8
-        
-        // Kalan alan yatak odalarına
-        const totalFixedRatio = livingRoomRatio + kitchenRatio + (bathroomRatio * bathrooms);
-        const remainingRatio = 1 - totalFixedRatio;
-        const bedroomRatio = bedrooms > 0 ? remainingRatio / bedrooms : 0;
-        
-        // Alan hesaplamaları
-        const livingRoomArea = Math.max(12, Math.round(totalArea * livingRoomRatio));
-        const kitchenArea = Math.max(6, Math.round(totalArea * kitchenRatio));
-        const bathroomArea = Math.max(3, Math.round(totalArea * bathroomRatio));
-        const bedroomArea = bedrooms > 0 ? Math.max(8, Math.round(totalArea * bedroomRatio)) : 0;
-        
-        // Toplam alan kontrolü ve düzeltme
-        const calculatedTotal = livingRoomArea + kitchenArea + (bathroomArea * bathrooms) + (bedroomArea * bedrooms);
-        const difference = totalArea - calculatedTotal;
-        
-        // Farkı salon alanına ekle
-        const adjustedLivingRoom = Math.max(12, livingRoomArea + difference);
-        
-        return {
-            livingRoom: adjustedLivingRoom,
-            bedroom: bedroomArea,
-            kitchen: kitchenArea,
-            bathroom: bathroomArea
-        };
-    }
-
-    generateRooms() {
-        const apartmentType = this.elements.apartmentType.value;
-        const totalArea = parseInt(this.elements.totalArea.value) || 75;
-        const streetFacing = parseInt(this.elements.streetFacing.value) || 1;
-        
-        const roomConfig = this.getRoomConfiguration(apartmentType);
-        const areas = this.calculateRoomAreas(totalArea, roomConfig);
-        
-        // SVG boyutları
-        const width = 600;
-        const height = 450;
-        
-        const rooms = [];
-        const isCorner = streetFacing >= 2;
-        
-        if (isCorner) {
-            rooms.push(...this.generateCornerLayout(width, height, roomConfig, areas));
-        } else {
-            rooms.push(...this.generateSingleFacadeLayout(width, height, roomConfig, areas));
-        }
-        
-        return { rooms, width, height };
-    }
-
-    generateCornerLayout(width, height, roomConfig, areas) {
-        const rooms = [];
-        const { bedrooms, bathrooms } = roomConfig;
-        
-        // Salon (sol alt - en büyük alan)
-        const livingW = width * 0.5;
-        const livingH = height * 0.55;
-        rooms.push({
-            type: 'Salon',
-            x: 0,
-            y: height - livingH,
-            width: livingW,
-            height: livingH,
-            area: areas.livingRoom,
-            color: '#e3f2fd',
-            class: 'salon'
-        });
-        
-        // Mutfak (sağ alt)
-        const kitchenW = width - livingW;
-        const kitchenH = height * 0.3;
-        rooms.push({
-            type: 'Mutfak',
-            x: livingW,
-            y: height - kitchenH,
-            width: kitchenW,
-            height: kitchenH,
-            area: areas.kitchen,
-            color: '#e8f5e8',
-            class: 'kitchen'
-        });
-        
-        // Yatak odaları (üst sıra) - sadece yatak odası varsa
-        if (bedrooms > 0) {
-            const bedroomW = width / bedrooms;
-            for (let i = 0; i < bedrooms; i++) {
-                rooms.push({
-                    type: bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
-                    x: i * bedroomW,
-                    y: 0,
-                    width: bedroomW,
-                    height: height * 0.35,
-                    area: areas.bedroom,
-                    color: '#f3e5f5',
-                    class: 'bedroom'
-                });
-            }
-        }
-        
-        // Banyolar (sağ orta)
-        const availableHeight = height - kitchenH - (bedrooms > 0 ? height * 0.35 : 0);
-        const bathroomH = availableHeight / bathrooms;
-        for (let i = 0; i < bathrooms; i++) {
-            const yPosition = (bedrooms > 0 ? height * 0.35 : 0) + (i * bathroomH);
-            rooms.push({
-                type: bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
-                x: livingW,
-                y: yPosition,
-                width: kitchenW,
-                height: bathroomH,
-                area: areas.bathroom,
-                color: '#fff3e0',
-                class: 'bathroom'
-            });
-        }
-        
-        return rooms;
-    }
-
-    generateSingleFacadeLayout(width, height, roomConfig, areas) {
-        const rooms = [];
-        const { bedrooms, bathrooms } = roomConfig;
-        
-        // Salon (merkez)
-        const livingW = width * 0.45;
-        const livingH = height * 0.6;
-        rooms.push({
-            type: 'Salon',
-            x: width * 0.3,
-            y: height * 0.2,
-            width: livingW,
-            height: livingH,
-            area: areas.livingRoom,
-            color: '#e3f2fd',
-            class: 'salon'
-        });
-        
-        // Mutfak (sol alt)
-        const kitchenW = width * 0.3;
-        const kitchenH = height * 0.3;
-        rooms.push({
-            type: 'Mutfak',
-            x: 0,
-            y: height - kitchenH,
-            width: kitchenW,
-            height: kitchenH,
-            area: areas.kitchen,
-            color: '#e8f5e8',
-            class: 'kitchen'
-        });
-        
-        // Yatak odaları (sağda) - sadece yatak odası varsa
-        if (bedrooms > 0) {
-            const bedroomW = width * 0.25;
-            const bedroomH = height / bedrooms;
-            for (let i = 0; i < bedrooms; i++) {
-                rooms.push({
-                    type: bedrooms === 1 ? 'Yatak Odası' : `Yatak Odası ${i + 1}`,
-                    x: width * 0.75,
-                    y: i * bedroomH,
-                    width: bedroomW,
-                    height: bedroomH,
-                    area: areas.bedroom,
-                    color: '#f3e5f5',
-                    class: 'bedroom'
-                });
-            }
-        }
-        
-        // Banyolar (sol üst)
-        const availableHeight = height - kitchenH;
-        const bathroomH = availableHeight / bathrooms;
-        for (let i = 0; i < bathrooms; i++) {
-            rooms.push({
-                type: bathrooms === 1 ? 'Banyo' : `Banyo ${i + 1}`,
-                x: 0,
-                y: i * bathroomH,
-                width: kitchenW,
-                height: bathroomH,
-                area: areas.bathroom,
-                color: '#fff3e0',
-                class: 'bathroom'
-            });
-        }
-        
-        return rooms;
-    }
-
-    generateFloorPlan() {
-        const { rooms, width, height } = this.generateRooms();
-        this.drawFloorPlan(rooms, width, height);
-        this.updateRoomDetails(rooms);
-        this.updateSummary(rooms);
-        this.updateProjectInfo();
-        
-        // Animasyon ekle
-        this.elements.floorPlan.classList.add('fade-in');
-        setTimeout(() => {
-            this.elements.floorPlan.classList.remove('fade-in');
-        }, 500);
-    }
-
-    drawFloorPlan(rooms, width, height) {
-        const svg = this.elements.floorPlan;
-        svg.innerHTML = ''; // Temizle
-        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        
-        // Arka plan
-        const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        background.setAttribute('width', width);
-        background.setAttribute('height', height);
-        background.setAttribute('fill', '#f8f9fa');
-        background.setAttribute('stroke', '#dee2e6');
-        background.setAttribute('stroke-width', '2');
-        svg.appendChild(background);
-        
-        // Odaları çiz
-        rooms.forEach((room, index) => {
-            this.drawRoom(svg, room, index);
-        });
-        
-        // Kuzey işareti ekle
-        this.drawNorthArrow(svg, width, height);
-        
-        // Ölçek çizgisi ekle
-        this.drawScale(svg, width, height);
-    }
-
-    drawRoom(svg, room, index) {
-        // Oda grubu oluştur
-        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        group.setAttribute('class', `room-group ${room.class}`);
-        
-        // Oda dikdörtgeni
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', room.x);
-        rect.setAttribute('y', room.y);
-        rect.setAttribute('width', room.width);
-        rect.setAttribute('height', room.height);
-        rect.setAttribute('fill', room.color);
-        rect.setAttribute('stroke', '#2c3e50');
-        rect.setAttribute('stroke-width', '2');
-        rect.setAttribute('class', 'room-rect');
-        rect.setAttribute('data-room-index', index);
-        
-        // Hover efekti için event listener
-        rect.addEventListener('mouseenter', (e) => {
-            e.target.setAttribute('stroke-width', '3');
-            e.target.setAttribute('filter', 'brightness(0.9)');
-        });
-        
-        rect.addEventListener('mouseleave', (e) => {
-            e.target.setAttribute('stroke-width', '2');
-            e.target.removeAttribute('filter');
-        });
-        
-        group.appendChild(rect);
-        
-        // Oda ismi - metin boyutunu oda boyutuna göre ayarla
-        const fontSize = Math.min(14, Math.max(10, room.width / 12, room.height / 8));
-        const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        nameText.setAttribute('x', room.x + room.width / 2);
-        nameText.setAttribute('y', room.y + room.height / 2 - 8);
-        nameText.setAttribute('text-anchor', 'middle');
-        nameText.setAttribute('class', 'room-text');
-        nameText.setAttribute('font-size', fontSize);
-        nameText.setAttribute('fill', '#2c3e50');
-        nameText.setAttribute('font-weight', 'bold');
-        nameText.textContent = room.type;
-        group.appendChild(nameText);
-        
-        // Alan bilgisi
-        const areaFontSize = Math.min(12, Math.max(8, room.width / 15, room.height / 10));
-        const areaText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        areaText.setAttribute('x', room.x + room.width / 2);
-        areaText.setAttribute('y', room.y + room.height / 2 + 10);
-        areaText.setAttribute('text-anchor', 'middle');
-        areaText.setAttribute('class', 'room-area-text');
-        areaText.setAttribute('font-size', areaFontSize);
-        areaText.setAttribute('fill', '#666');
-        areaText.textContent = `${room.area} m²`;
-        group.appendChild(areaText);
-        
-        // Boyut bilgileri (yeterince büyük odalar için)
-        if (room.width > 80 && room.height > 60) {
-            const dimensionText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            dimensionText.setAttribute('x', room.x + room.width / 2);
-            dimensionText.setAttribute('y', room.y + room.height / 2 + 25);
-            dimensionText.setAttribute('text-anchor', 'middle');
-            dimensionText.setAttribute('font-size', '10');
-            dimensionText.setAttribute('fill', '#999');
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={generateFloorPlan}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            >
+              <Settings className="w-5 h-5" />
+              Kat Planı Oluştur
+            </button>
             
-            // Yaklaşık boyutları hesapla (1 piksel ≈ 2.5 cm)
-            const widthM = Math.round((room.width / 24) * 100) / 100; // 600px = 15m varsayımı
-            const heightM = Math.round((room.height / 18) * 100) / 100; // 450px = 12m varsayımı
-            dimensionText.textContent = `${widthM}m × ${heightM}m`;
-            group.appendChild(dimensionText);
-        }
-        
-        svg.appendChild(group);
-    }
+            {floorPlan && (
+              <button
+                onClick={downloadSVG}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                <Download className="w-5 h-5" />
+                SVG İndir
+              </button>
+            )}
+          </div>
+        </div>
 
-    drawNorthArrow(svg, width, height) {
-        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        group.setAttribute('transform', `translate(${width - 50}, 40)`);
-        
-        // Çember
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', '0');
-        circle.setAttribute('cy', '0');
-        circle.setAttribute('r', '20');
-        circle.setAttribute('fill', '#fff');
-        circle.setAttribute('stroke', '#2c3e50');
-        circle.setAttribute('stroke-width', '2');
-        group.appendChild(circle);
-        
-        // Ok
-        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        arrow.setAttribute('d', 'M 0,-15 L 6,5 L 0,2 L -6,5 Z');
-        arrow.setAttribute('fill', '#e74c3c');
-        group.appendChild(arrow);
-        
-        // K harfi (Kuzey)
-        const nText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        nText.setAttribute('x', '0');
-        nText.setAttribute('y', '35');
-        nText.setAttribute('text-anchor', 'middle');
-        nText.setAttribute('font-size', '12');
-        nText.setAttribute('font-weight', 'bold');
-        nText.setAttribute('fill', '#2c3e50');
-        nText.textContent = 'K';
-        group.appendChild(nText);
-        
-        svg.appendChild(group);
-    }
-
-    drawScale(svg, width, height) {
-        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        group.setAttribute('transform', `translate(20, ${height - 30})`);
-        
-        // Ölçek çizgisi (2m temsili)
-        const scaleLength = 48; // 600px = 15m, o halde 48px = 1.2m ≈ 2m olarak gösterelim
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', '0');
-        line.setAttribute('y1', '0');
-        line.setAttribute('x2', scaleLength);
-        line.setAttribute('y2', '0');
-        line.setAttribute('stroke', '#2c3e50');
-        line.setAttribute('stroke-width', '2');
-        group.appendChild(line);
-        
-        // Sol dikey çizgi
-        const leftTick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        leftTick.setAttribute('x1', '0');
-        leftTick.setAttribute('y1', '-5');
-        leftTick.setAttribute('x2', '0');
-        leftTick.setAttribute('y2', '5');
-        leftTick.setAttribute('stroke', '#2c3e50');
-        leftTick.setAttribute('stroke-width', '2');
-        group.appendChild(leftTick);
-        
-        // Sağ dikey çizgi
-        const rightTick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        rightTick.setAttribute('x1', scaleLength);
-        rightTick.setAttribute('y1', '-5');
-        rightTick.setAttribute('x2', scaleLength);
-        rightTick.setAttribute('y2', '5');
-        rightTick.setAttribute('stroke', '#2c3e50');
-        rightTick.setAttribute('stroke-width', '2');
-        group.appendChild(rightTick);
-        
-        // Ölçek m
-    const scaleText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        scaleText.setAttribute('x', scaleLength / 2);
-        scaleText.setAttribute('y', '-10');
-        scaleText.setAttribute('text-anchor', 'middle');
-        scaleText.setAttribute('font-size', '10');
-        scaleText.setAttribute('fill', '#2c3e50');
-        scaleText.textContent = '2m';
-        group.appendChild(scaleText);
-        
-        svg.appendChild(group);
-    }
-
-    updateRoomDetails(rooms) {
-        const container = this.elements.roomDetails;
-        container.innerHTML = '';
-        
-        rooms.forEach((room, index) => {
-            const roomCard = document.createElement('div');
-            roomCard.className = `room-card ${room.class} slide-in`;
-            roomCard.style.animationDelay = `${index * 0.1}s`;
+        {/* Floor Plan Display */}
+        {floorPlan && (
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Kat Planı Önizlemesi</h2>
+            <div className="flex justify-center">
+              {floorPlan}
+            </div>
             
-            // Boyut hesapla (daha doğru hesaplama)
-            const roomWidth = Math.round((room.width / 24) * 100) / 100; // 600px = 15m
-            const roomHeight = Math.round((room.height / 18) * 100) / 100; // 450px = 12m
-            
-            roomCard.innerHTML = `
-                <h4><i class="fas ${this.getRoomIcon(room.type)}"></i> ${room.type}</h4>
-                <div class="room-area">${room.area} m²</div>
-                <div class="room-dimensions">
-                    Boyutlar: ${roomWidth}m × ${roomHeight}m
+            {/* Oda Bilgileri */}
+            <div className="mt-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {Object.entries(calculateRoomSizes(roomConfig, totalM2)).map(([room, area]) => (
+                <div key={room} className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="font-medium text-gray-800 capitalize">{room}</div>
+                  <div className="text-sm text-gray-600">{area}m²</div>
                 </div>
-            `;
-            
-            container.appendChild(roomCard);
-        });
-    }
+              ))}
+            </div>
+          </div>
+        )}
 
-    getRoomIcon(roomType) {
-        if (roomType.includes('Salon')) return 'fa-couch';
-        if (roomType.includes('Yatak')) return 'fa-bed';
-        if (roomType.includes('Mutfak')) return 'fa-utensils';
-        if (roomType.includes('Banyo')) return 'fa-shower';
-        return 'fa-door-open';
-    }
+        {/* PWA Install Prompt */}
+        <div className="mt-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl p-6 text-white">
+          <h3 className="text-lg font-semibold mb-2">📱 Mobil Uygulama Olarak Kaydet</h3>
+          <p className="text-sm opacity-90">
+            Bu uygulamayı ana ekranınıza ekleyerek PWA olarak kullanabilirsiniz. 
+            Tarayıcınızın "Ana ekrana ekle" seçeneğini kullanın.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-    updateSummary(rooms) {
-        const totalArea = parseInt(this.elements.totalArea.value) || 75;
-        const totalRooms = rooms.length;
-        
-        // Yaşanabilir alan hesaplama (banyolar hariç)
-        const livableArea = rooms
-            .filter(room => !room.type.includes('Banyo'))
-            .reduce((sum, room) => sum + room.area, 0);
-        
-        this.elements.summaryArea.textContent = `${totalArea} m²`;
-        this.elements.summaryRooms.textContent = totalRooms;
-        this.elements.livableArea.textContent = `${livableArea} m²`;
-    }
-
-    downloadPlan() {
-        const svg = this.elements.floorPlan;
-        const svgData = new XMLSerializer().serializeToString(svg);
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        
-        // Canvas boyutlarını ayarla
-        canvas.width = 800;
-        canvas.height = 600;
-        
-        img.onload = () => {
-            // Beyaz arka plan
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // SVG'yi çiz
-            ctx.drawImage(img, 50, 80, 700, 450);
-            
-            // Proje bilgilerini ekle
-            ctx.fillStyle = '#2c3e50';
-            ctx.font = 'bold 20px Arial';
-            ctx.fillText(this.elements.projectName.value || 'Kat Planı', 50, 40);
-            
-            ctx.font = '14px Arial';
-            ctx.fillText(this.elements.projectSpecs.textContent || '', 50, 65);
-            
-            // Tarih ekle
-            ctx.font = '12px Arial';
-            ctx.fillText(`Oluşturulma: ${new Date().toLocaleDateString('tr-TR')}`, 50, 580);
-            
-            // İndir
-            const link = document.createElement('a');
-            link.download = `${(this.elements.projectName.value || 'kat-plani').replace(/\s+/g, '-')}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        };
-        
-        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
-    }
-
-    printPlan() {
-        const printWindow = window.open('', '_blank');
-        const svgContent = this.elements.floorPlan.outerHTML;
-        const projectName = this.elements.projectName.value || 'Kat Planı';
-        const projectSpecs = this.elements.projectSpecs.textContent || '';
-        
-        printWindow.document.write(`
+export default FloorPlanGenerator;
